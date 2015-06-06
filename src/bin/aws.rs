@@ -17,5 +17,5 @@ pub fn main() {
     let res = client.get("DescribeInstances");
     let mut output = String::new();
     res.unwrap().read_to_string(&mut output);
-    info!("{:?}", output)
+    println!("{:?}", output)
 }
