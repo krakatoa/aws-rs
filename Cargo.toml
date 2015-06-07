@@ -3,6 +3,13 @@ name = "aws"
 version = "0.0.1"
 authors = ["Thom May <thom@may.lt>"]
 
+[[bin]]
+name = "ec2"
+path = "examples/ec2.rs"
+
+# name = "glacier"
+# path = "examples/glacier.rs"
+
 [dependencies]
 openssl = "*"
 time = "*"

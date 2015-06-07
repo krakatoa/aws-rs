@@ -91,6 +91,9 @@ impl<'a> SigV4 {
     fn date(mut self) -> SigV4 {
         append_header(&mut self.headers, "x-amz-date",
                       self.date.strftime("%Y%m%dT%H%M%SZ").unwrap().to_string().as_ref());
+        if self.service == Some("glacier".to_string()) {
+          append_header(&mut self.headers, "x-amz-glacier-version", "2012-06-01");
+        }
         self
     }
 
@@ -119,6 +122,7 @@ impl<'a> SigV4 {
     }
 
     fn signature(self) -> String {
+        debug!("string to sign: {}", self.signing_string());
         hmac(SHA256, &self.derived_signing_key(),
              self.signing_string().as_bytes()).to_hex().to_string()
     }
@@ -148,6 +152,7 @@ impl<'a> SigV4 {
     }
 
     fn hashed_canonical_request(&self) -> String {
+        debug!("canonical request: {}", self.canonical_request());
         to_hexdigest(self.canonical_request())
     }
 

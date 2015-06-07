@@ -7,6 +7,7 @@ use credentials::Credentials;
 #[derive(Debug)]
 pub struct ApiClient {
     signer: SigV4,
+    service: String,
     endpoint: String
 }
 
@@ -20,21 +21,46 @@ impl ApiClient {
         let host = format!("{}.{}.amazonaws.com", service, region);
         let sig = sig.header(("Host", &host));
 
+        let endpoint = match service {
+          "glacier" => format!("https://{}/-/", host),
+          _ => format!("https://{}/", host)
+        };
+
         ApiClient {
             signer: sig,
-            endpoint: format!("https://{}/", host)
+            service: format!("{}", service),
+            endpoint: endpoint
         }
     }
 
     pub fn get(self, action: &str) -> HyperResult<Response>{
         let sig = self.signer.clone();
         let sig = sig.method("GET");
-        let sig = sig.path("/");
-        let query = format!("Action={}&Version=2015-04-15", action);
-        let sig = sig.query(&query);
-        let url = format!("{}?{}", self.endpoint, query);
 
-        let headers = sig.as_headers();
+        let query: String;
+        let mut url: String;
+        let path;
+
+        let headers;
+
+        if self.service == "glacier".to_string() {
+          path = "/-/vaults";
+          let sig = sig.path(path);
+          url = format!("{}/{}", self.endpoint, action);
+
+          headers = sig.as_headers();
+        } else {
+          path = "/";
+          let sig = sig.path(path);
+
+          let query = format!("Action={}&Version=2015-04-15", action);
+          let sig = sig.query(&query);
+          url = format!("{}?{}", self.endpoint, query);
+
+          headers = sig.as_headers()
+        };
+        debug!("{}", url);
+
         let mut client = Client::new();
         let res = client.get(&url).headers(headers).send();
         res
