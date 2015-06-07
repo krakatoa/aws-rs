@@ -6,8 +6,8 @@ use std::env;
 pub struct Credentials {
     pub key: Option<String>,
     pub secret: Option<String>,
-    path: String,
-    profile: String,
+    path: Option<String>,
+    profile: Option<String>,
 }
 
 impl<'a> Credentials {
@@ -15,24 +15,33 @@ impl<'a> Credentials {
         Credentials{
             key: None,
             secret: None,
-            path: get_profile_path(),
-            profile: get_default_profile(),
+            path: Some(get_profile_path()),
+            profile: Some(get_default_profile()),
+        }
+    }
+
+    pub fn create(key: &str, secret: &str) -> Credentials {
+        Credentials{
+            key: Some(key.to_string()),
+            secret: Some(secret.to_string()),
+            path: None,
+            profile: None
         }
     }
 
     pub fn path(mut self, path: &str) -> Credentials {
-        self.path = get_absolute_path(path);
+        self.path = Some(get_absolute_path(path));
         self
     }
 
     pub fn profile(mut self, profile: &str) -> Credentials {
-        self.profile = String::from_str(profile);
+        self.profile = Some(String::from_str(profile));
         self
     }
 
     pub fn load(mut self) -> Credentials {
-        let mut conf = Ini::load_from_file(&self.path).unwrap();
-        let section = conf.section(Some(&self.profile[..])).unwrap();
+        let mut conf = Ini::load_from_file(&self.path.clone().unwrap()).unwrap();
+        let section = conf.section(Some(&(self.profile.clone().unwrap())[..])).unwrap();
         let key = section.get("aws_access_key_id").unwrap();
         let secret = section.get("aws_secret_access_key").unwrap();
 

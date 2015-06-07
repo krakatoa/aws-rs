@@ -9,7 +9,7 @@ use std::io::Read;
 
 pub fn main() {
     env_logger::init().unwrap();
-    let cred = Credentials::new().load();
+    let cred = Credentials::create("YOUR-ACCESS-KEY-ID", "YOUR-SECRET-ACCESS-KEY");
     let region = "us-east-1";
     let service = "ec2";
 
