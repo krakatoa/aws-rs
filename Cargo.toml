@@ -4,17 +4,20 @@ version = "0.0.1"
 authors = ["Thom May <thom@may.lt>"]
 
 [[bin]]
-name = "ec2"
-path = "examples/ec2.rs"
+# name = "ec2"
+# path = "examples/ec2.rs"
 
-# name = "glacier"
+name = "glacier"
 # path = "examples/glacier.rs"
+
+path = "examples/tree_hash.rs"
 
 [dependencies]
 openssl = "*"
 time = "*"
 url = "*"
 log = "*"
+rust-crypto = "*"
 rustc-serialize = "*"
 hyper = "*"
 env_logger = "*"

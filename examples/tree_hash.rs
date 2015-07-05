@@ -1,7 +1,20 @@
+use std::fs;
+use std::fs::File;
+use std::path::Path;
+use std::io::{Seek, SeekFrom, Read, Take, Bytes};
+
+extern crate crypto;
+use crypto::digest::Digest;
+use crypto::sha2::Sha256;
+
+extern crate rustc_serialize;
+use rustc_serialize::json;
+use rustc_serialize::json::{Json, Parser};
+
 pub struct BlockInfo {
-  hash: f64, // make it a String
-  size: f64,  // make it a u8
-  offset: f64, // make it a u8
+  hash: String,
+  size: u64,
+  offset: u64,
   leaf_blocks_info: Vec<BlockInfo>,
   chunk_blocks_info: Vec<BlockInfo>
 }
@@ -10,7 +23,7 @@ impl Clone for BlockInfo {
   fn clone(&self) -> BlockInfo {
     let mut leaf_blocks = self.leaf_blocks_info.iter().map(|b| (*b).clone());
     BlockInfo {
-      hash: self.hash,
+      hash: self.hash.clone(),
       size: self.size,
       offset: self.offset,
       leaf_blocks_info: leaf_blocks.collect(),
@@ -19,73 +32,108 @@ impl Clone for BlockInfo {
   }
 }
 
-fn calc_tree_hash(size: f64, offset: f64) -> BlockInfo {
+fn calc_hash(path: &Path, size: u64, offset: u64) -> String {
+  let mut sha = Sha256::new();
+
+  let mut f = match File::open(path) {
+    Err(e) => panic!("couldn't open {}", path.display()),
+    Ok(file) => file,
+  };
+
+  let seek_from: SeekFrom = SeekFrom::Start(offset);
+
+  match f.seek(seek_from) {
+    Err(e) => panic!("couldn't seek file at {offset}"),
+    Ok(_) => ()
+  };
+
+  let mut reader: Take<File> = f.take(size);
+  let s: &mut [u8; 1024*1024] = &mut [0; 1024*1024];
+  match reader.read(s) {
+    Err(e) => panic!("could not read partial file at {}", offset),
+    Ok(_) => sha.input(s)
+  }
+
+  sha.result_str()
+}
+
+fn merge_hashes(a_hash: String, b_hash: String) -> String {
+  let mut m_hash = a_hash.clone();
+  m_hash.push_str(&b_hash[..]);
+
+  let mut sha = Sha256::new();
+  sha.input_str(&m_hash[..]);
+  sha.result_str()
+}
+
+fn calc_tree_hash(path: &Path, size: u64, offset: u64) -> BlockInfo {
   let mut root_block_info: BlockInfo = BlockInfo {
-    hash: 0.0,
+    hash: String::new(),
     size: size,
     offset: offset,
     leaf_blocks_info: vec![],
     chunk_blocks_info: vec![]
   };
 
-  if size <= 1.0 {
-    let hash: f64 = size;
+  if size <= 1024 * 1024 {
     let block: BlockInfo = BlockInfo {
-      hash: hash,
+      hash: calc_hash(path, size, offset),
       size: size,
       offset: offset,
       leaf_blocks_info: vec![],
       chunk_blocks_info: vec![]
     };
 
-    root_block_info.hash = hash;
+    root_block_info.hash = block.hash.clone();
     root_block_info.leaf_blocks_info.push(block.clone());
     root_block_info.chunk_blocks_info.push(block);
-  } else if size > 1.0 && size < 2.0 {
-    let a_block_info = calc_tree_hash(1.0, offset);
+  } else if size > 1024 * 1024 && size < 1024 * 1024 * 2 {
+    let a_block_info = calc_tree_hash(path, 1024 * 1024, offset);
     for block in a_block_info.leaf_blocks_info.iter() {
       root_block_info.leaf_blocks_info.push((*block).clone());
       root_block_info.chunk_blocks_info.push((*block).clone());
-      root_block_info.hash += block.hash;
     };
 
-    let b_block_info = calc_tree_hash(size - 1.0, offset + 1.0);
+    let b_block_info = calc_tree_hash(path, size - 1024 * 1024, offset + 1024 * 1024);
     for block in b_block_info.leaf_blocks_info.iter() {
       root_block_info.leaf_blocks_info.push((*block).clone());
       root_block_info.chunk_blocks_info.push((*block).clone());
-      root_block_info.hash += block.hash;
     };
-  } else {
-    let tail: f64 = size % 2.0;
-    let head: f64 = size - tail;
 
-    if tail > 0.0 {
-      let mut a_block_info = calc_tree_hash(head, offset);
-      root_block_info.hash += a_block_info.hash;
+    root_block_info.hash = merge_hashes(a_block_info.hash.clone(), b_block_info.hash.clone());
+  } else {
+    let tail: u64 = size % (1024 * 1024 * 2);
+    let head: u64 = size - tail;
+
+    if tail > 0 {
+      let mut a_block_info = calc_tree_hash(path, head, offset);
       for block in a_block_info.chunk_blocks_info.iter() {
         root_block_info.chunk_blocks_info.push((*block).clone());
       };
-      root_block_info.leaf_blocks_info.push(a_block_info);
 
-      let mut c_block_info = calc_tree_hash(tail, head);
-      root_block_info.hash += c_block_info.hash;
+      let mut c_block_info = calc_tree_hash(path, tail, head);
       for block in c_block_info.chunk_blocks_info.iter() {
         root_block_info.chunk_blocks_info.push((*block).clone());
       };
+
+      root_block_info.hash = merge_hashes(a_block_info.hash.clone(), c_block_info.hash.clone());
+
+      root_block_info.leaf_blocks_info.push(a_block_info);
       root_block_info.leaf_blocks_info.push(c_block_info);
     } else {
-      let mut a_block_info = calc_tree_hash(head / 2.0, offset);
-      root_block_info.hash += a_block_info.hash;
+      let mut a_block_info = calc_tree_hash(path, head / 2, offset);
       for block in a_block_info.chunk_blocks_info.iter() {
         root_block_info.chunk_blocks_info.push((*block).clone());
       };
-      root_block_info.leaf_blocks_info.push(a_block_info);
 
-      let mut b_block_info = calc_tree_hash(head / 2.0, offset + head / 2.0);
-      root_block_info.hash += b_block_info.hash;
+      let mut b_block_info = calc_tree_hash(path, head / 2, offset + head / 2);
       for block in b_block_info.chunk_blocks_info.iter() {
         root_block_info.chunk_blocks_info.push((*block).clone());
       };
+
+      root_block_info.hash = merge_hashes(a_block_info.hash.clone(), b_block_info.hash.clone());
+
+      root_block_info.leaf_blocks_info.push(a_block_info);
       root_block_info.leaf_blocks_info.push(b_block_info);
     }
   }
@@ -94,8 +142,13 @@ fn calc_tree_hash(size: f64, offset: f64) -> BlockInfo {
 }
 
 fn main() {
-  let s: f64 = 9.5;
-  let root_block_info: BlockInfo = calc_tree_hash(s, 0.0);
+  let path = Path::new("158827.mp4");
+  let len = match fs::metadata(path) {
+    Ok(r) => r.len(),
+    Err(e) => panic!("could not find file")
+  };
+
+  let root_block_info: BlockInfo = calc_tree_hash(path, len, 0);
 
   println!("Root Hash: {}", root_block_info.hash);
   println!("Root Size: {}", root_block_info.size);
